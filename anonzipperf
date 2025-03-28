@@ -1,71 +1,53 @@
 import os
 import re
 import gzip
-import sys
 from multiprocessing import Pool, cpu_count
 from functools import partial
-from time import time
 
 class FieldMasker:
     def __init__(self, fields):
         combined = '|'.join(map(re.escape, fields))
         self.pattern = re.compile(
-            r'(\b({})\s*=\s*)([^&\s]+)|("({})":\s*")([^"]+)(")'.format(combined, combined),
+            fr'(\b({combined})\s*=\s*)([^&\s]+)|("({combined})"\s*:\s*")([^"]+)(")',
             flags=re.IGNORECASE
         )
 
     def mask(self, line):
         return self.pattern.sub(
-            lambda m: '{}******'.format(m.group(1)) if m.group(1) else '{}******{}'.format(m.group(4), m.group(7)),
+            lambda m: (f'{m.group(1)}******') if m.group(1) else (f'{m.group(4)}******{m.group(7)}'),
             line
         )
 
 def process_file(file_path, masker):
-    temp_path = "{}.tmp".format(file_path)
+    temp_path = f"{file_path}.tmp"
     is_gz = file_path.lower().endswith('.gz')
     
     try:
         opener = gzip.open if is_gz else open
-        mode = 'rt' if sys.version_info >= (3, 7) else 'r'
-        with opener(file_path, mode) as f_in, opener(temp_path, 'wt') as f_out:
+        with opener(file_path, 'rt') as f_in, \
+             opener(temp_path, 'wt') as f_out:
+            
             for line in f_in:
                 f_out.write(masker.mask(line))
         
         os.replace(temp_path, file_path)
         return True
     except Exception as e:
-        print("Error processing {}: {}".format(file_path, str(e)))
         if os.path.exists(temp_path):
             os.remove(temp_path)
         return False
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python script.py <input_directory>")
-        sys.exit(1)
-
     input_dir = sys.argv[1]
-    if not os.path.isdir(input_dir):
-        print("Error: {} is not a directory".format(input_dir))
-        sys.exit(1)
-
-    fields_to_mask = ["password", "token", "email", "pole1"]
-    masker = FieldMasker(fields_to_mask)
-    
     files = [f.path for f in os.scandir(input_dir) if f.is_file()]
+    masker = FieldMasker(["password", "token", "email", "pole1"])
     
-    start_time = time()
-    
-    # Używamy Pool do zrównoleglenia przetwarzania
+    # Automatyczne wykrywanie optymalnej liczby procesów
     with Pool(processes=min(cpu_count(), len(files))) as pool:
         results = pool.map(partial(process_file, masker=masker), files)
-    
+        
     success = sum(results)
-    total_time = time() - start_time
-    
-    print("Processed {}/{} files in {:.2f} seconds".format(success, len(files), total_time))
-    if success > 0:
-        print("Average time per file: {:.2f} seconds".format(total_time / success))
+    print(f"Przetworzono {success}/{len(files)} plików")
 
 if __name__ == "__main__":
     main()
