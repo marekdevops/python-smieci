@@ -12,7 +12,10 @@ class FieldMasker:
         )
     
     def mask(self, line):
-        return self.pattern.sub(lambda m: m.group(1) or m.group(4) + "******" + (m.group(7) if m.group(7) else ""), line)
+        return self.pattern.sub(
+            lambda m: (f'{m.group(1)}******') if m.group(1) else (f'{m.group(4)}******{m.group(7)}'),
+            line
+        )
 
 def main():
     if len(sys.argv) < 2:
